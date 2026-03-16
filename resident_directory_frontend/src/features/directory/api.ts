@@ -2,28 +2,30 @@
 
 import { z } from "zod";
 import { apiRequest } from "@/lib/api";
-import { ResidentProfile, ResidentProfileSchema } from "@/lib/types";
+import { ResidentDirectoryCard, ResidentDirectoryCardSchema } from "@/lib/types";
 
-const ResidentListSchema = z.array(ResidentProfileSchema);
+const ResidentListSchema = z.array(ResidentDirectoryCardSchema);
 
 // PUBLIC_INTERFACE
 export async function fetchDirectory({
   token,
   q,
-  visibility,
+  tag,
+  building,
 }: {
   token: string;
   q?: string;
-  visibility?: "public" | "residents_only" | "private";
-}): Promise<ResidentProfile[]> {
+  tag?: string;
+  building?: string;
+}): Promise<ResidentDirectoryCard[]> {
   /** Fetch resident directory with optional search/filter. */
   const params = new URLSearchParams();
   if (q) params.set("q", q);
-  if (visibility) params.set("visibility", visibility);
+  if (tag) params.set("tag", tag);
+  if (building) params.set("building", building);
 
-  // Expected: GET /residents?...
   return apiRequest({
-    path: `/residents${params.size ? `?${params.toString()}` : ""}`,
+    path: `/residents/directory${params.size ? `?${params.toString()}` : ""}`,
     method: "GET",
     token,
     schema: ResidentListSchema,

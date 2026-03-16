@@ -2,65 +2,98 @@
 
 import { z } from "zod";
 import { apiRequest } from "@/lib/api";
-import {
-  Announcement,
-  AnnouncementSchema,
-  ResidentProfile,
-  ResidentProfileSchema,
-} from "@/lib/types";
+import { Announcement, AnnouncementSchema } from "@/lib/types";
 
-const ResidentsSchema = z.array(ResidentProfileSchema);
-const AnnouncementsSchema = z.array(AnnouncementSchema);
-
-export const AuditEventSchema = z.object({
+export const AuditLogSchema = z.object({
   id: z.string(),
+  actor_user_id: z.string().optional().nullable(),
   action: z.string(),
-  actor: z.string().optional().nullable(),
-  createdAt: z.string(),
-  metadata: z.unknown().optional(),
+  entity_type: z.string().optional().nullable(),
+  entity_id: z.string().optional().nullable(),
+  success: z.boolean(),
+  details: z.record(z.any()).default({}),
+  created_at: z.string().optional(),
 });
-export type AuditEvent = z.infer<typeof AuditEventSchema>;
+export type AuditLog = z.infer<typeof AuditLogSchema>;
 
-const AuditListSchema = z.array(AuditEventSchema);
-
-// PUBLIC_INTERFACE
-export async function adminListResidents({ token }: { token: string }): Promise<ResidentProfile[]> {
-  /** Admin: list all residents (includes private fields depending on backend). */
-  return apiRequest({ path: "/admin/residents", method: "GET", token, schema: ResidentsSchema });
-}
+const AuditListSchema = z.array(AuditLogSchema);
 
 // PUBLIC_INTERFACE
-export async function adminCreateResident({
-  token,
-  body,
+export async function adminBootstrapAdmin({
+  email,
+  password,
 }: {
-  token: string;
-  body: Partial<ResidentProfile> & { email: string; displayName: string };
-}): Promise<ResidentProfile> {
-  /** Admin: create resident. */
+  email: string;
+  password: string;
+}): Promise<{ ok: boolean; user_id: string }> {
+  /** One-time helper to create/update an admin account (no auth). */
+  // Backend expects query params (simple function params).
+  const params = new URLSearchParams({ email, password });
   return apiRequest({
-    path: "/admin/residents",
+    path: `/admin/bootstrap-admin?${params.toString()}`,
     method: "POST",
-    token,
-    body,
-    schema: ResidentProfileSchema,
   });
 }
 
 // PUBLIC_INTERFACE
-export async function adminDeleteResident({ token, id }: { token: string; id: string }) {
-  /** Admin: delete resident. */
-  return apiRequest<{ ok: true }>({ path: `/admin/residents/${id}`, method: "DELETE", token });
+export async function adminImportResidents({
+  token,
+  residents,
+}: {
+  token: string;
+  residents: Array<{
+    email: string;
+    password: string;
+    first_name: string;
+    last_name: string;
+    display_name?: string | null;
+    unit?: string | null;
+    building?: string | null;
+    phone?: string | null;
+    bio?: string | null;
+    tags?: string[];
+  }>;
+}) {
+  /** Admin: import residents in bulk. */
+  return apiRequest({
+    path: "/admin/import",
+    method: "POST",
+    token,
+    body: { residents },
+  });
+}
+
+// PUBLIC_INTERFACE
+export async function adminExportResidents({
+  token,
+  format,
+}: {
+  token: string;
+  format: "csv" | "json";
+}) {
+  /** Admin: export residents (csv streams; json returns object). */
+  return apiRequest({
+    path: "/admin/export",
+    method: "POST",
+    token,
+    body: { format },
+  });
+}
+
+// PUBLIC_INTERFACE
+export async function adminGetAuditLogs({ token }: { token: string }): Promise<AuditLog[]> {
+  /** Admin: list recent audit logs. */
+  return apiRequest({ path: "/admin/audit-logs", method: "GET", token, schema: AuditListSchema });
 }
 
 // PUBLIC_INTERFACE
 export async function adminListAnnouncements({ token }: { token: string }): Promise<Announcement[]> {
-  /** Admin: list announcements. */
+  /** Admin: list announcements (admin can include unpublished via query). */
   return apiRequest({
-    path: "/admin/announcements",
+    path: "/announcements?include_unpublished=true",
     method: "GET",
     token,
-    schema: AnnouncementsSchema,
+    schema: z.array(AnnouncementSchema),
   });
 }
 
@@ -70,11 +103,11 @@ export async function adminCreateAnnouncement({
   body,
 }: {
   token: string;
-  body: { title: string; body: string };
+  body: { title: string; body: string; is_published?: boolean };
 }): Promise<Announcement> {
   /** Admin: create announcement. */
   return apiRequest({
-    path: "/admin/announcements",
+    path: "/announcements",
     method: "POST",
     token,
     body,
@@ -85,11 +118,5 @@ export async function adminCreateAnnouncement({
 // PUBLIC_INTERFACE
 export async function adminDeleteAnnouncement({ token, id }: { token: string; id: string }) {
   /** Admin: delete announcement. */
-  return apiRequest<{ ok: true }>({ path: `/admin/announcements/${id}`, method: "DELETE", token });
-}
-
-// PUBLIC_INTERFACE
-export async function adminGetAuditLog({ token }: { token: string }): Promise<AuditEvent[]> {
-  /** Admin: fetch audit log. */
-  return apiRequest({ path: "/admin/audit-log", method: "GET", token, schema: AuditListSchema });
+  return apiRequest<{ ok: true }>({ path: `/announcements/${id}`, method: "DELETE", token });
 }

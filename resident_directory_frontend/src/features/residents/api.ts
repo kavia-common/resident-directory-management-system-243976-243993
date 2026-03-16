@@ -1,24 +1,12 @@
 "use client";
 
 import { apiRequest } from "@/lib/api";
-import { ResidentProfile, ResidentProfileSchema } from "@/lib/types";
-
-// PUBLIC_INTERFACE
-export async function fetchResident({
-  token,
-  id,
-}: {
-  token: string;
-  id: string;
-}): Promise<ResidentProfile> {
-  /** Fetch a specific resident profile by id. */
-  return apiRequest({
-    path: `/residents/${id}`,
-    method: "GET",
-    token,
-    schema: ResidentProfileSchema,
-  });
-}
+import {
+  ResidentMyProfile,
+  ResidentMyProfileSchema,
+  PrivacySettings,
+  PrivacySettingsSchema,
+} from "@/lib/types";
 
 // PUBLIC_INTERFACE
 export async function updateMyProfile({
@@ -26,29 +14,52 @@ export async function updateMyProfile({
   body,
 }: {
   token: string;
-  body: Partial<ResidentProfile>;
-}): Promise<ResidentProfile> {
-  /** Update current user's profile (privacy, contact info). */
+  body: Partial<ResidentMyProfile>;
+}): Promise<ResidentMyProfile> {
+  /** Update current user's profile (non-privacy fields). */
   return apiRequest({
-    path: `/me/profile`,
+    path: `/residents/me/profile`,
     method: "PATCH",
     token,
     body,
-    schema: ResidentProfileSchema,
+    schema: ResidentMyProfileSchema,
   });
 }
 
 // PUBLIC_INTERFACE
-export async function fetchMyProfile({
-  token,
-}: {
-  token: string;
-}): Promise<ResidentProfile> {
-  /** Fetch current user's profile. */
+export async function fetchMyProfile({ token }: { token: string }): Promise<ResidentMyProfile> {
+  /** Fetch current user's full profile (including privacy). */
   return apiRequest({
-    path: `/me/profile`,
+    path: `/residents/me/profile`,
     method: "GET",
     token,
-    schema: ResidentProfileSchema,
+    schema: ResidentMyProfileSchema,
   });
 }
+
+// PUBLIC_INTERFACE
+export async function updateMyPrivacy({
+  token,
+  body,
+}: {
+  token: string;
+  body: PrivacySettings;
+}): Promise<{ ok: boolean; privacy: PrivacySettings }> {
+  /** Update current user's privacy settings. */
+  return apiRequest({
+    path: `/residents/me/privacy`,
+    method: "PATCH",
+    token,
+    body,
+    schema: zPrivacyResponseSchema,
+  });
+}
+
+const zPrivacyResponseSchema = (() => {
+  // local schema to avoid exporting a one-off type
+  const z = require("zod") as typeof import("zod");
+  return z.object({
+    ok: z.boolean(),
+    privacy: PrivacySettingsSchema,
+  });
+})();

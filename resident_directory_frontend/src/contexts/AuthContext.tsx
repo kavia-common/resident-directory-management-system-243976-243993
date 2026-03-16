@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api";
-import { Session, SessionSchema } from "@/lib/types";
+import { Role, Session, SessionSchema } from "@/lib/types";
 
 type AuthState =
   | { status: "loading" }
@@ -12,7 +12,7 @@ type AuthState =
 type AuthContextValue = {
   state: AuthState;
   token: string | null;
-  role: Session["role"] | null;
+  role: Role | null;
   user: Session["user"] | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -21,6 +21,11 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEY = "rd_session_v1";
+
+function deriveRole(roles: unknown): Role {
+  const list = Array.isArray(roles) ? roles.map(String) : [];
+  return list.includes("admin") ? "admin" : "resident";
+}
 
 // PUBLIC_INTERFACE
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -49,17 +54,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function login(email: string, password: string) {
     setState({ status: "loading" });
 
-    // NOTE: Backend OpenAPI is minimal; these endpoints are expected by the work-item.
-    // If backend differs, adjust paths here to match.
-    const session = await apiRequest<Session>({
-      path: "/auth/login",
-      method: "POST",
-      body: { email, password },
-      schema: SessionSchema,
+    /**
+     * Backend:
+     * - POST /auth/login expects OAuth2PasswordRequestForm (application/x-www-form-urlencoded)
+     * - returns { access_token, token_type }
+     */
+    const body = new URLSearchParams();
+    body.set("username", email);
+    body.set("password", password);
+
+    const tokenRes = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:3001"}/auth/login`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      }
+    );
+
+    const tokenData = await tokenRes.json().catch(() => null);
+    if (!tokenRes.ok) {
+      const detail =
+        tokenData && typeof tokenData === "object" && "detail" in tokenData
+          ? String((tokenData as any).detail)
+          : "Login failed";
+      throw new Error(detail);
+    }
+
+    const accessToken = String(tokenData?.access_token || "");
+    if (!accessToken) throw new Error("Login failed: missing access token");
+
+    const me = await apiRequest<{ id: string; email: string; roles: string[] }>({
+      path: "/auth/me",
+      method: "GET",
+      token: accessToken,
     });
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    setState({ status: "authenticated", session });
+    const role = deriveRole(me.roles);
+
+    // Reasonable default: use email local-part as displayName until profile is loaded.
+    const displayName = me.email?.split("@")[0] || me.email;
+
+    const session: Session = {
+      token: accessToken,
+      role,
+      user: { id: me.id, email: me.email, displayName },
+    };
+
+    // Validate before storing
+    const validated = SessionSchema.parse(session);
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(validated));
+    setState({ status: "authenticated", session: validated });
   }
 
   function logout() {
